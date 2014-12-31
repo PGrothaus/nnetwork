@@ -1,11 +1,11 @@
 import numpy as np
-from costfunction import sigmoid
+from costfunction import sigmoid, cost
 
 class NeuralNet:
     def __init__(self, nNodesInLayer, lambd):
         assert type(nNodesInLayer) is np.ndarray
         assert len(nNodesInLayer) > 1
-        self.nLayer = len( nNodesInLayer)
+        self.nLayers = len( nNodesInLayer)
         self.nNodes = np.sum( nNodesInLayer )
         self.NodesInLayer = nNodesInLayer
         self.theta = []
@@ -13,19 +13,24 @@ class NeuralNet:
         self.dl = []
         self.deriv = []
         self.regParam = lambd
-        for ii in range( self.nLayer - 1 ):
+        for ii in range( self.nLayers - 1 ):
             nIn  = self.NodesInLayer[ ii ]
             nOut = self.NodesInLayer[ ii + 1 ]
             self.theta.append( np.random.uniform( size=(nOut, nIn+1) ) )
-        print 'Neural Network created!'
-        print self.nLayer, 'layers in total (including In- and Output-layer)'
+            #self.theta.append( np.ones( (nOut, nIn+1) ) )
+        print ''
+        print 'NEURAL NETWORK created!'
+        print self.nLayers, 'layers in total (including In- and Output-layer)'
         print len( self.theta ), 'parameter matrices'
+        print ''
 
 
     def get_nodes_in_layer(self, n):
         return self.NodesInLayer[ n ]
 
     def get_theta(self, n):
+        assert n < self.nLayers - 1,  'n too large. Not so many '\
+                                        'parameter matrices'
         return self.theta[ n ]
 
     def get_al(self, n):
@@ -35,9 +40,12 @@ class NeuralNet:
         return self.dl[n]
 
     def get_derivatives(self, n):
+        assert n < self.nLayers - 1,  'n too large. Not so many layers'
         return self.deriv[n]
 
     def forward_propagate(self, xIn):
+        #Need to add bias term to xIN -> vstack
+        assert np.shape(xIn)[0] + 1 == np.shape(self.theta[0])[1]
         xTMP = xIn
         self.al = []
         for theta in self.theta:
@@ -48,19 +56,21 @@ class NeuralNet:
         self.al.append( xTMP )
         return None
 
-    def back_propagate(self, xOut):
-        xTMP = xOut
+    def back_propagate(self, xOut, yData):
+        #make sure the data has the correct layout
+        assert np.shape(xOut)[0] == np.shape(yData)[0]
+        xTMP = xOut - yData
         self.dl = []
         self.dl.append( xTMP )
         for ii in range( len(self.theta) ):
             idx = len(self.theta) - ii - 1
             thetaTMP = self.theta[idx]
-            thetaTMP = np.delete(thetaTMP, 0, 1)
             xTMP  = thetaTMP.T.dot( xTMP )
-            alTMP = np.delete( self.al[idx], 0, 0)
-            xTMP = xTMP * alTMP * (1. - alTMP )
+            xTMP = xTMP * self.al[ idx ] * (1. - self.al[ idx ] )
+            xTMP  = np.delete( xTMP, 0, 0 )
             self.dl.append( xTMP )
         self.dl = self.dl[ ::-1 ]
+        assert np.shape( self.al[0] )[0] - 1 == np.shape( self.dl[0] )[0]
         return None
 
     def calculate_derivatives(self):
@@ -68,12 +78,15 @@ class NeuralNet:
         for ii in range( len(self.theta) ):
             ai = self.al[ ii ]
             di = self.dl[ ii + 1 ]
-            yDim = np.shape(ai)[0]
             xDim = np.shape(di)[0]
+            yDim = np.shape(ai)[0]
             sumTMP = np.zeros( (xDim,yDim) )
             for jj in range( np.shape(ai)[1] ):
                 sumTMP += np.outer( di.T[jj], ai.T[jj] )
-            thetaTMP = self.theta[ii]   
+            assert np.shape( sumTMP )[0] == xDim
+            assert np.shape( sumTMP )[1] == yDim
+            thetaTMP = self.theta[ii]
+            #Do not regularize the bias term 
             thetaTMP.T[0] = 0
             self.deriv.append( 1. * sumTMP/np.shape(ai)[1] 
                                + self.regParam * thetaTMP )
@@ -88,18 +101,23 @@ class NeuralNet:
 ###Check dimensions for easy example
 ###Check derivatives
 
-nLayers = np.array( [3,2,1] )
-NN = NeuralNet( nLayers,1 )
-xTest = np.array( [ [1., 5., 6., 4.], [2., 10., 2., 4.], [1., 5., 3., 4.] ] )
-NN.forward_propagate(xTest)
-xOut = NN.get_al( len(nLayers) - 1 )
-NN.back_propagate( xOut )
-NN.calculate_derivatives()
+nLayers = np.array( [2,2,3] )
+NN = NeuralNet( nLayers, 0 )
+xTest = np.array( [ [0., 2.], [0., 2.] ] )
+yData = np.array( [[1.], [0.], [0.] ] )
+costOld = 100000000000.
+costNew = 100000000.
+while costNew < costOld - 0.001 :
+    costOld = costNew
+    NN.forward_propagate(xTest)
+    xOut = NN.get_al( len(nLayers) - 1 )
+    NN.back_propagate( xOut, yData )
+    NN.calculate_derivatives()
+    NN.update_theta(0.01)
+    
 
-print NN.get_theta(0)
-NN.update_theta( 0.1 )
-print NN.get_theta(0)
-
-print ''
-print NN.get_derivatives(0)
-
+    thetaList = []
+    for ii in range (len(nLayers) - 1 ):
+        thetaList.append( NN.get_theta( ii ) )
+    costNew = cost( xOut, yData, 1., thetaList )
+print costOld

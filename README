@@ -1,0 +1,15 @@
+0th layer is the input layer
+
+al are the activation parameters of layer l
+
+dl are the error parameters of layer l used to calculate the derivatives
+    d0 is not needed
+    
+
+A single data input vector needs the numpy shape (lenght,1), i.e. it 
+    has to be a column vector. This ensures the correctness of the
+    matrix products and outer products within the program
+
+In this implementation the bias term has no error node, because a is set to
+    1 by hand. The theta values are updated nevertheless, because of the
+    outer product of aj and di to get the derivatives of the cost function.
