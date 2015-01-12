@@ -1,8 +1,10 @@
 import numpy as np
-from costfunction import sigmoid
+
+def sigmoid( z ):
+    return 1. / ( 1. + np.exp( -z ) )
 
 class NeuralNet:
-    def __init__(self, nNodesInLayer, lambd):
+    def __init__(self, nNodesInLayer, regP):
         assert type(nNodesInLayer) is np.ndarray
         assert len(nNodesInLayer) > 1
         self.nLayers = len( nNodesInLayer)
@@ -11,13 +13,13 @@ class NeuralNet:
         self.theta = []
         self.al = []
         self.dl = []
-        self.deriv = []
-        self.regParam = lambd
+        self.deri = []
+        self.regParam = regP
         for ii in range( self.nLayers - 1 ):
             nIn  = self.NodesInLayer[ ii ]
             nOut = self.NodesInLayer[ ii + 1 ]
-            #self.theta.append( np.random.uniform( size=(nOut, nIn+1) ) )
-            self.theta.append( np.ones( (nOut, nIn+1) ) )
+            self.theta.append(  np.random.normal( 0., .5, \
+                                                  size=(nOut, nIn+1) ) ) 
         print ''
         print 'NEURAL NETWORK created!'
         print self.nLayers, 'layers in total (including In- and Output-layer)'
@@ -35,13 +37,16 @@ class NeuralNet:
 
     def get_al(self, n):
         return self.al[n]
+    
+    def set_al( self,n, ai ):
+        self.al[n] = ai
 
     def get_dl(self, n):
         return self.dl[n]
 
     def get_derivatives(self, n):
         assert n < self.nLayers - 1,  'n too large. Not so many layers'
-        return self.deriv[n]
+        return self.deri[n]
 
     def forward_propagate(self, xIn):
         #Need to add bias term to xIN -> vstack
@@ -51,7 +56,7 @@ class NeuralNet:
         for theta in self.theta:
             xTMP = np.vstack( ( np.ones( np.shape(xIn)[1]), xTMP ) )
             self.al.append( xTMP )
-            xTMP = theta.dot( xTMP )
+            xTMP = np.dot(theta, xTMP )
             xTMP = sigmoid( xTMP )
         self.al.append( xTMP )
         return None
@@ -59,12 +64,13 @@ class NeuralNet:
     def back_propagate(self, xOut, yData):
         #make sure the data has the correct layout
         assert np.shape(xOut)[0] == np.shape(yData)[0]
-        xTMP = xOut - yData
+        xTMP = np.array( xOut - yData )
         self.dl = []
         self.dl.append( xTMP )
+        #could supress last loop, because d0 is not used fo calc derivatives
         for ii in range( len(self.theta) ):
             idx = len(self.theta) - ii - 1
-            xTMP = self.theta[ idx ].T.dot( xTMP )
+            xTMP = np.dot( self.theta[ idx ].T, xTMP )
             xTMP = xTMP * self.al[ idx ] * (1. - self.al[ idx ] )
             xTMP = np.delete( xTMP, 0, 0 )
             self.dl.append( xTMP )
@@ -77,48 +83,68 @@ class NeuralNet:
         for ii in range( len(self.theta) ):
             ai = self.al[ ii ]
             di = self.dl[ ii + 1 ]
-            xDim = np.shape(di)[0]
-            yDim = np.shape(ai)[0]
-            sumTMP = np.zeros( (xDim,yDim) )
-            for jj in range( np.shape(ai)[1] ):
-                sumTMP += np.outer( di[ :,jj ], ai[ :,jj ] )
-            assert np.shape( sumTMP )[0] == xDim
-            assert np.shape( sumTMP )[1] == yDim
-            thetaTMP = self.theta[ii]
+            m = np.shape(ai)[1]
+            xDim = np.shape( self.theta[ii] )[0]
+            yDim = np.shape( self.theta[ii] )[1]
+            sumTMP = np.einsum( 'ik, jk', di, ai )  
+            assert np.shape( sumTMP ) == ( xDim, yDim ) 
+            thetaTMP = np.array( self.theta[ii] )
             #Do not regularize the bias term 
             thetaTMP.T[0] = 0
-            self.deriv.append( 1. * sumTMP/np.shape(ai)[1] 
-                               + self.regParam * thetaTMP / np.shape(ai)[1] )
+            self.deri.append( 1. * sumTMP / m  \
+                               + self.regParam * thetaTMP / ( 2. * m ) )
         return None 
 
     def update_theta(self, epsilon):
         for ii in range( len(self.theta) ):
-            self.theta[ii] = ( 1. - epsilon * self.deriv[ii] ) * self.theta[ii]
+            self.theta[ii] = ( self.theta[ii] - epsilon * self.deri[ii] )
         return None
 
-    def train( self, xIn, yData, precision, epsilon ):
-        costOld = 10**10
-        costNew = 10**9
-        while costNew < costOld - precision :
-            costOld = costNew
-            self.forward_propagate( xIn )
-            xOut = NN.get_al( len( nLayers ) - 1 )
-            self.back_propagate( xOut, yData )
-            self.calculate_derivatives()
+    def train( self, xIn, yData, epsilon = 1.2, precision = 0.001 ):
+        self.forward_propagate( xIn )
+        xOut = self.get_al( self.nLayers - 1 )
+        self.back_propagate( xOut, yData )
+        self.calculate_derivatives()
+        costOld = self.cost( xOut, yData )
+        costNew = np.array( costOld )
+        TRAIN = True
+        count = 0
+        while True == TRAIN :
+            costOld = np.array( costNew )
+            if ( 0 == count%10 ):
+                print count, epsilon, costOld
             self.update_theta( epsilon )
+            self.forward_propagate( xIn )
+            xOut = self.get_al( self.nLayers - 1 )
             costNew = self.cost( xOut, yData )
-        print costNew
+            if (costNew < costOld).all() :
+                self.back_propagate( xOut, yData )
+                self.calculate_derivatives()
+                if (( costNew + precision ) > costOld).any() :
+                    TRAIN = False
+            elif (costNew > costOld).any() :
+                self.update_theta( -1. * epsilon )
+                costNew = costOld
+                epsilon = epsilon / 2.
+                if epsilon < 0.04:
+                    TRAIN = False
+            count += 1
+        print 'Final Cost:', costNew
    
     def cost( self, xOut, yData ):
+        xOut = np.where( xOut == 0., 10 ** ( -10 ),      xOut )
+        xOut = np.where( xOut == 1., 1. - 10 ** ( -10 ), xOut )
         m = np.shape( xOut )[1]
         sumTheta = 0.
         for theta in self.theta:
             theta = np.delete( theta, 0, 1 )
-            sumTheta += self.regParam * np.sum( theta * theta )
-        sumCost = - yData * np.log( xOut )
-        sumCost -= ( 1. - yData ) * np.log( 1. - xOut )
-        sumCost = np.sum( sumCost )
-        return 1./m * (sumCost + 1./2 * sumTheta )
+            sumTheta += np.sum( theta * theta )
+        sumCost  = np.array( [- yData * np.log( xOut ) ] )
+        sumCost  = sumCost - ( 1. - yData ) * np.log( 1. - xOut )
+        sumCost  = 1. / m * np.sum( sumCost )
+        sumTheta = 1. / 2 / m * sumTheta
+        sumTheta = self.regParam * sumTheta
+        return sumCost + sumTheta
 
     def set_theta(self, n, thetaIn):
         assert type(thetaIn) is np.ndarray
@@ -130,7 +156,6 @@ class NeuralNet:
         thetaNew = np.array( self.theta[n] )
         thetaNew[ (ii, jj) ] = thetaNew[ ( ii, jj ) ] + diff
         grad = self.get_derivatives( n )[ii][jj]
-        print self.get_derivatives( n )
         self.forward_propagate( xIn )
         xOut = self.get_al( self.nLayers - 1 )
         costOld = self.cost( xOut, yData )
@@ -143,13 +168,45 @@ class NeuralNet:
         print ' Results of gradient checking: '
         print grad, gradTest
         print ''
-        
-nLayers = np.array( [2,3] )
-NN = NeuralNet( nLayers, 0. )
-xTest = np.array( [ [1., 2.], [1., 2.] ] )
-yData = np.array( [[1.], [0.], [0.] ] )
 
-NN.train( xTest, yData, 0.001, 0.01 )
-xOut = NN.get_al( len(nLayers) - 1 )
-NN.check_grad( 0 , 1, 1, xTest, yData ) 
-NN.check_grad( 0 , 1, 1, xTest, yData ) 
+    def feature_scaling(self, xIn ):
+        m  = np.shape( xIn )[1]
+        featureMax = np.max ( xIn, axis = 1 )
+        featureMax = np.reshape( featureMax, ( np.shape( xIn )[0], 1 ) )
+        featureMax = np.repeat( featureMax, m, axis = 1 )
+        featureMin = np.min ( xIn, axis = 1 )
+        featureMin = np.reshape( featureMin, ( np.shape( xIn )[0], 1 ) )
+        featureMin = np.repeat( featureMin, m, axis = 1 )
+        featureMax = np.where( featureMin == featureMax, 1., featureMax )
+        xIn = ( xIn - featureMin ) / ( featureMax - featureMin )
+        return xIn
+
+    def predict( self, xIn ):
+        self.forward_propagate( xIn )
+        yPred  = self.get_al( self.nLayers - 1 )
+        maxArr = np.max(yPred, axis = 0 )
+        maxArr = np.reshape( maxArr, ( 1, len(maxArr) ) )
+        yPred  = yPred - np.repeat( maxArr, np.shape( yPred )[0], axis = 0 )
+        yPred  = np.where( yPred < 0., 0., 1. )
+        yPred  = yPred.T
+        yPred  = np.nonzero( yPred )[1]
+        return yPred
+    
+    def write_to_file( self, filename ):
+        f = open( filename, "w" )
+        f.close()
+        f = open( filename, "a" )
+        for mat in self.theta:
+            for ii in range( np.shape(mat)[0] ):
+                for jj in range( np.shape(mat)[1] ):
+                    f.write(str(mat[ii][jj])+'\n')
+        f.close()
+#nLayers = np.array( [2,3] )
+#NN = NeuralNet( nLayers, 0. )
+#xTest = np.array( [ [100., 140.], [1., 2.] ] )
+#yData = np.array( [[1.], [0.], [0.] ] )
+#print xTest
+#xTest = NN.feature_scaling( xTest )
+#print xTest
+
+#NN.train( xTest, yData, 0.001, 0.01 )

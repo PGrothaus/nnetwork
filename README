@@ -13,3 +13,6 @@ A single data input vector needs the numpy shape (lenght,1), i.e. it
 In this implementation the bias term has no error node, because a is set to
     1 by hand. The theta values are updated nevertheless, because of the
     outer product of aj and di to get the derivatives of the cost function.
+
+Need to initialise with a Gaussian to allow for negative numbers and to have
+    a hierarchy in the numbers.
