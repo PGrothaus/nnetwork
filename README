@@ -1,3 +1,8 @@
+Please see the Example.ipynb for a use case with the mnist dataset.
+
+
+Some notation in the implementation:
+
 0th layer is the input layer
 
 al are the activation parameters of layer l
